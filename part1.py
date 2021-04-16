@@ -1,6 +1,10 @@
 import sys
 import pymorton
-from src import consts
+import consts
+import math
+
+ID_INCR = 0
+TREE_LEVEL = 0
 
 def calculate_mbrs(coords):
     mbrs = []
@@ -28,7 +32,7 @@ def calculate_z_order(all_mbrs):
         x_middle = (mbr[0] + mbr[1]) / 2
         y_middle = (mbr[2] + mbr[3]) / 2
         # Interleave the y,x values and find z-order #
-        z_order_mbrs.append([index, pymorton.interleave_latlng(y_middle, x_middle)])
+        z_order_mbrs.append([index,pymorton.interleave_latlng(y_middle, x_middle)])
     return z_order_mbrs
 
 def main():
@@ -46,7 +50,7 @@ Usage: python part1.py <path to coords file> <path to offsets file>")
             coords_lines.append(line.strip('\n').split(','))
 
     # Write coords lines in out_coords
-    with open('files/out_coords.txt', "w") as out:
+    with open('../testfiles/out_coords.txt', "w") as out:
         for i, line in enumerate(coords_lines):
             out.write(f"{i}. {line}\n")
 
@@ -59,81 +63,101 @@ Usage: python part1.py <path to coords file> <path to offsets file>")
                 coords_list.append(coords_lines[i])
             objects_coords.append(coords_list)
 
-        with open('files/out_objects_coords.txt', "w") as out:
+        with open('../testfiles/out_objects_coords.txt', "w") as out:
             for coord in objects_coords:
                 out.write(f"{coord}\n")
     
     all_objects_mbrs = calculate_mbrs(objects_coords)
     
-    with open("files/objects_mbrs.txt", 'w') as f:
+    with open("../testfiles/objects_mbrs.txt", 'w') as f:
         for objmbr in all_objects_mbrs:
             f.write(f'{objmbr}\n')
 
     z_order_mbrs = calculate_z_order(all_objects_mbrs)
 
-    with open('test.txt', 'w') as f:
+    with open('../testfiles/test.txt', 'w') as f:
         for z_order in z_order_mbrs:
             f.write(f'{z_order}\n')
 
     sorted_mbrs = []
     # With the z-order sort all objects mbrs in a new list #
-    with open('files/z_order.txt', 'w') as fi:
+    with open('../testfiles/z_order.txt', 'w') as fi:
         for z_order in sorted(z_order_mbrs, key=lambda x: x[1]):
             fi.write(f'{z_order}\n')
-            sorted_mbrs.append([z_order[0], all_objects_mbrs[z_order[0]]])
+            sorted_mbrs.append([z_order[0],all_objects_mbrs[z_order[0]]])
 
-    with open('files/sorted_Mbrs.txt', 'w') as f2:
+    with open('../testfiles/sorted_Mbrs.txt', 'w') as f2:
         for mbr in sorted_mbrs:
             f2.write(f'{mbr}\n')
     
     print(f'len of z_order mbrs: {len(z_order_mbrs)}')
     print(f'len of sorted_mbrs: {len(sorted_mbrs)}')
     
-    with open('Rtree.txt', 'w') as r_tree:
-        r_tree.write("Tree is being constructed...\n")
-        
+    with open('../outputfiles/Rtree.txt', 'w') as r_tree:        
         construct_r_tree(sorted_mbrs, r_tree, isnonleaf=0)
 
 def construct_r_tree(mbrs, r_tree, isnonleaf):
     global ID_INCR
+    global TREE_LEVEL
+
     new_mbrs = []
-    mbrs_copy = mbrs[:]
     size_of_mbrs = len(mbrs)
-    if size_of_mbrs <= 2:
+
+    print(f'{math.ceil(size_of_mbrs/consts.MAX_CAPACITY)} nodes at level {TREE_LEVEL}')
+    TREE_LEVEL += 1 
+
+    if math.ceil(size_of_mbrs/consts.MAX_CAPACITY) == 1:
         # TODO create root node here
         return
-    
+
     if size_of_mbrs % consts.MAX_CAPACITY == 0: 
-        # We have size_of_mbrs/MAX_CAPACITY nodes  with capacity: MAX_CAPACITY   
+        # We have size_of_mbrs/MAX_CAPACITY nodes  with capacity: MAX_CAPACITY  
+        
         for node in range(0, size_of_mbrs//consts.MAX_CAPACITY):
             # create entry for node
-            node_data = mbrs_copy[node*consts.MAX_CAPACITY:(node+1)*consts.MAX_CAPACITY]
+            node_data = mbrs[node*consts.MAX_CAPACITY:(node+1)*consts.MAX_CAPACITY]
             #[isnonleaf, node-id, [[id1, MBR1], [id2, MBR2], …, [idn, MBRn]]]
             r_tree.write(f"[{isnonleaf}, {ID_INCR}, {node_data}]\n")
             new_mbrs.append([ID_INCR, node_data])
             ID_INCR += 1
             # add entry to new_mbrs 
-    
-    elif size_of_mbrs % consts.MAX_CAPACITY >= 8:
+        with open(f'../testfiles/new_mbrs_level{TREE_LEVEL}.txt', 'w') as l:
+            for mbr in new_mbrs:
+                l.write(f'{mbr}\n')
+
+        with open(f'../testfiles/new_mbrs_in_tree{TREE_LEVEL}.txt', 'w') as f:
+            
+            for mbrs in new_mbrs:
+                l = []
+                for mbr in mbrs[1]:
+                    l.append(mbr[1])
+                mbrs[1] = calculate_mbrs_nonleafs(l)
+
+            for re in new_mbrs:
+                f.write(f'[{re}]\n')
+
+        construct_r_tree(new_mbrs, r_tree, isnonleaf=1)
+            
+    elif size_of_mbrs % consts.MAX_CAPACITY >= consts.MIN_DATA_NUM:
+        print("Must create an extra with the remaining nodes")
         pass
     else:
+        print("Take from the previous and add to this one")
+        #construct_r_tree(new_mbrs, r_tree, isnonleaf=1)
         pass
 
-    
-    with open('files/new_mbrs_in_tree.txt', 'w') as f:
-        for mbr in new_mbrs:
-            l = []
-            for x in mbr[1]:
-                l.append(x[1])
-            #f.write(f'{l}\n')
-            l = calculate_mbrs_nonleafs(l)
-            f.write(f'{l}\n')
-    
-    #new_mbrs = calculate_mbrs_nonleafs(new_mbrs)
-    #construct_r_tree(new_mbrs, r_tree, isnonleaf=1)
-
 def calculate_mbrs_nonleafs(mbrs):
+    mbr_x_low = []
+    mbr_x_high =[]
+    mbr_y_low = []
+    mbr_y_high = []
+
     for mbr in mbrs:
-        for node_mbr in mbr:
-            pass
+        mbr_x_low.append(mbr[0])
+        mbr_x_high.append(mbr[1])
+        mbr_y_low.append(mbr[2])
+        mbr_y_high.append(mbr[3])
+
+    return [min(mbr_x_low), max(mbr_x_high), min(mbr_y_low), max(mbr_y_high)]
+
 main()
