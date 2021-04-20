@@ -1,3 +1,9 @@
+################################################
+#### Onomateponimo: Vasileios Gkotzagiannis ####
+#### Arithmos Mitrwou: 2672                 ####
+#### Part 1                                 ####
+################################################
+
 import sys
 import pymorton
 import consts
@@ -75,12 +81,8 @@ Usage: python part1.py <path to coords file> <path to offsets file>")
 
     z_order_mbrs = calculate_z_order(all_objects_mbrs)
 
-    with open('testfiles/test.txt', 'w') as f:
-        for z_order in z_order_mbrs:
-            f.write(f'{z_order}\n')
-
     sorted_mbrs = []
-    # With the z-order sort all objects mbrs in a new list #
+    # With the z-order, sort all objects mbrs in a new list #
     with open('testfiles/z_order.txt', 'w') as fi:
         for z_order in sorted(z_order_mbrs, key=lambda x: x[1]):
             fi.write(f'{z_order}\n')
