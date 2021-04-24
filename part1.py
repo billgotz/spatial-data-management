@@ -6,28 +6,34 @@
 
 import sys
 import pymorton
-import consts
 import math
 
+# ### Global Variables #### # 
 ID_INCR = 0
 TREE_LEVEL = 0
+MAX_CAPACITY = 20
+MIN_DATA_NUM = 8
+# ######################### #
 
 def calculate_mbrs(coords):
+    """
+    Calculates the mbrs from object coords (leafs only)
+    """
     mbrs = []
     for coord in coords:
         mbr = []
         xs = []
         ys = []
-        
         for n in coord:
+            # x is in the first place and y in the second of the coord #
             xs.append(float(n[0]))
             ys.append(float(n[1]))
-
+        # Find the min, max in all x's and y's of coords #
         mbr.append(min(xs))
         mbr.append(max(xs))
         mbr.append(min(ys))
         mbr.append(max(ys))
-
+        # Append the new mbr in mbrs #
         mbrs.append(mbr)
     return mbrs
 
@@ -38,8 +44,107 @@ def calculate_z_order(all_mbrs):
         x_middle = (mbr[0] + mbr[1]) / 2
         y_middle = (mbr[2] + mbr[3]) / 2
         # Interleave the y,x values and find z-order #
-        z_order_mbrs.append([index,pymorton.interleave_latlng(y_middle, x_middle)])
+        z_order_mbrs.append([index, pymorton.interleave_latlng(y_middle, x_middle)])
     return z_order_mbrs
+
+def write_to_file(filename, list_to_write, with_enum):
+    """
+    Util method that writes a list to a file
+    """
+    with open(f'testfiles/{filename}', "w") as out:
+        if with_enum:
+            for i, line in enumerate(list_to_write):
+                out.write(f"{i}. {line}\n")
+        else:
+            for line in list_to_write:
+                out.write(f"{line}\n")
+
+def construct_r_tree(mbrs, r_tree, isnonleaf):
+    """
+    Creates the Rtree from the leafs to the root
+    """
+    global ID_INCR
+    global TREE_LEVEL
+    global MAX_CAPACITY
+    global MIN_DATA_NUM
+
+    new_mbrs = []
+    size_of_mbrs = len(mbrs)
+
+    if math.ceil(size_of_mbrs/MAX_CAPACITY) == 1:
+        #print("In root")
+        r_tree.write(f"[{isnonleaf}, {ID_INCR}, {mbrs}]\n")
+        print(f'1 node at level {TREE_LEVEL}.')
+        return
+
+    if size_of_mbrs % MAX_CAPACITY == 0: 
+        # We have size_of_mbrs/MAX_CAPACITY nodes  with capacity: MAX_CAPACITY  
+        for node in range(0, size_of_mbrs//MAX_CAPACITY):
+            # create entry for node
+            node_data = mbrs[node*MAX_CAPACITY:(node+1)*MAX_CAPACITY]
+            #[isnonleaf, node-id, [[id1, MBR1], [id2, MBR2], …, [idn, MBRn]]]
+            r_tree.write(f"[{isnonleaf}, {ID_INCR}, {node_data}]\n")
+            new_mbrs.append([ID_INCR, node_data])
+            ID_INCR += 1
+            
+    elif size_of_mbrs % MAX_CAPACITY >= MIN_DATA_NUM:
+        #print("Fill the remain with the last")
+        remain = MAX_CAPACITY - size_of_mbrs % MAX_CAPACITY
+        num_of_nodes = math.ceil(size_of_mbrs/MAX_CAPACITY)
+        for node in range(0, num_of_nodes):
+            # if in last node add the remaining mbrs in node_data
+            if node == num_of_nodes - 1:
+                node_data = mbrs[node*MAX_CAPACITY:(node+1)*MAX_CAPACITY - remain]
+            else:
+                node_data = mbrs[node*MAX_CAPACITY:(node+1)*MAX_CAPACITY]
+            # [isnonleaf, node-id, [[id1, MBR1], [id2, MBR2], …, [idn, MBRn]]]
+            r_tree.write(f"[{isnonleaf}, {ID_INCR}, {node_data}]\n")
+            new_mbrs.append([ID_INCR, node_data])
+            ID_INCR += 1
+
+    elif size_of_mbrs % MAX_CAPACITY < MIN_DATA_NUM:
+        #print("Take from the previous and add to the last")
+        remain = MIN_DATA_NUM - size_of_mbrs % MAX_CAPACITY
+        num_of_nodes = math.ceil(size_of_mbrs/MAX_CAPACITY)
+        for node in range(0, num_of_nodes):
+            if node == num_of_nodes - 2:
+                node_data = mbrs[node*MAX_CAPACITY:(node+1)*MAX_CAPACITY - remain]
+            elif node == num_of_nodes -1:
+                node_data = mbrs[node*MAX_CAPACITY - remain:(node+1)*MAX_CAPACITY]
+            else:
+                node_data = mbrs[node*MAX_CAPACITY:(node+1)*MAX_CAPACITY]
+            # [isnonleaf, node-id, [[id1, MBR1], [id2, MBR2], …, [idn, MBRn]]]
+            r_tree.write(f"[{isnonleaf}, {ID_INCR}, {node_data}]\n")
+            new_mbrs.append([ID_INCR, node_data])
+            ID_INCR += 1
+
+    print(f'{len(new_mbrs)} nodes at level {TREE_LEVEL}.')
+    TREE_LEVEL += 1
+
+    create_nodes(new_mbrs)        
+    construct_r_tree(new_mbrs, r_tree, isnonleaf=1)
+
+def create_nodes(new_mbrs):
+    # write_to_file(f'new_mbrs_level{TREE_LEVEL}.txt', new_mbrs, 0)        
+    for mbrs in new_mbrs:
+        l = []
+        for mbr in mbrs[1]:
+            l.append(mbr[1])
+        mbrs[1] = calculate_mbrs_nonleafs(l)
+
+def calculate_mbrs_nonleafs(mbrs):
+    mbr_x_low = []
+    mbr_x_high =[]
+    mbr_y_low = []
+    mbr_y_high = []
+
+    for mbr in mbrs:
+        mbr_x_low.append(mbr[0])
+        mbr_x_high.append(mbr[1])
+        mbr_y_low.append(mbr[2])
+        mbr_y_high.append(mbr[3])
+
+    return [min(mbr_x_low), max(mbr_x_high), min(mbr_y_low), max(mbr_y_high)]
 
 def main():
     if (len(sys.argv) < 3):
@@ -56,9 +161,7 @@ Usage: python part1.py <path to coords file> <path to offsets file>")
             coords_lines.append(line.strip('\n').split(','))
 
     # Write coords lines in out_coords
-    with open('testfiles/out_coords.txt', "w") as out:
-        for i, line in enumerate(coords_lines):
-            out.write(f"{i}. {line}\n")
+    # write_to_file('out_coords.txt', coords_lines, 1)
 
     # Read offsets file and 
     with open(sys.argv[2], "r") as offsets:
@@ -69,127 +172,26 @@ Usage: python part1.py <path to coords file> <path to offsets file>")
                 coords_list.append(coords_lines[i])
             objects_coords.append(coords_list)
 
-        with open('testfiles/out_objects_coords.txt', "w") as out:
-            for coord in objects_coords:
-                out.write(f"{coord}\n")
+    # write_to_file('out_objects_coords.txt', objects_coords, 0)
     
     all_objects_mbrs = calculate_mbrs(objects_coords)
-    
-    with open("testfiles/objects_mbrs.txt", 'w') as f:
-        for objmbr in all_objects_mbrs:
-            f.write(f'{objmbr}\n')
+    # write_to_file('objects_mbrs.txt', all_objects_mbrs, 0)
 
     z_order_mbrs = calculate_z_order(all_objects_mbrs)
+    # Sort the z_orders and save to new list #
+    sorted_z_orders = sorted(z_order_mbrs, key = lambda x: x[1])
 
+    # write_to_file('sorted_z_orders.txt', sorted_z_orders, 1)
+
+    # With the sorted z-orders, sort all objects mbrs in a new list #
     sorted_mbrs = []
-    # With the z-order, sort all objects mbrs in a new list #
-    with open('testfiles/z_order.txt', 'w') as fi:
-        for z_order in sorted(z_order_mbrs, key=lambda x: x[1]):
-            fi.write(f'{z_order}\n')
-            sorted_mbrs.append([z_order[0],all_objects_mbrs[z_order[0]]])
+    for z_order in sorted_z_orders:
+        sorted_mbrs.append([z_order[0],all_objects_mbrs[z_order[0]]])
 
-    with open('testfiles/sorted_Mbrs.txt', 'w') as f2:
-        for mbr in sorted_mbrs:
-            f2.write(f'{mbr}\n')
-    
-    #print(f'len of z_order mbrs: {len(z_order_mbrs)}')
-    print(f'len of sorted_mbrs: {len(sorted_mbrs)}')
+    # write_to_file('sorted_mbrs.txt', sorted_mbrs, 0)
     
     with open('Rtree.txt', 'w') as r_tree:        
         construct_r_tree(sorted_mbrs, r_tree, isnonleaf=0)
 
-def construct_r_tree(mbrs, r_tree, isnonleaf):
-    global ID_INCR
-    global TREE_LEVEL
-
-    new_mbrs = []
-    size_of_mbrs = len(mbrs)
-    # print(f"The ceil is: {math.ceil(size_of_mbrs/consts.MAX_CAPACITY)}")
-    # print(f'Size of mbrs list is: {size_of_mbrs}')
-
-    if math.ceil(size_of_mbrs/consts.MAX_CAPACITY) == 1:
-        # TODO create root node here
-        #print("In root")
-        r_tree.write(f"[{isnonleaf}, {ID_INCR}, {mbrs}]\n")
-        print(f'1 node at level {TREE_LEVEL}.')
-        return
-
-    if size_of_mbrs % consts.MAX_CAPACITY == 0: 
-        # We have size_of_mbrs/MAX_CAPACITY nodes  with capacity: MAX_CAPACITY  
-        
-        for node in range(0, size_of_mbrs//consts.MAX_CAPACITY):
-            # create entry for node
-            node_data = mbrs[node*consts.MAX_CAPACITY:(node+1)*consts.MAX_CAPACITY]
-            #[isnonleaf, node-id, [[id1, MBR1], [id2, MBR2], …, [idn, MBRn]]]
-            r_tree.write(f"[{isnonleaf}, {ID_INCR}, {node_data}]\n")
-            new_mbrs.append([ID_INCR, node_data])
-            ID_INCR += 1
-            
-    elif size_of_mbrs % consts.MAX_CAPACITY >= consts.MIN_DATA_NUM:
-        #print("Fill the remain with the last")
-        remain = consts.MAX_CAPACITY - size_of_mbrs % consts.MAX_CAPACITY
-        num_of_nodes = math.ceil(size_of_mbrs/consts.MAX_CAPACITY)
-        for node in range(0, num_of_nodes):
-            # create entry for node
-            if node == num_of_nodes - 1:
-                node_data = mbrs[node*consts.MAX_CAPACITY:(node+1)*consts.MAX_CAPACITY - remain]
-            else:
-                node_data = mbrs[node*consts.MAX_CAPACITY:(node+1)*consts.MAX_CAPACITY]
-            #[isnonleaf, node-id, [[id1, MBR1], [id2, MBR2], …, [idn, MBRn]]]
-            r_tree.write(f"[{isnonleaf}, {ID_INCR}, {node_data}]\n")
-            new_mbrs.append([ID_INCR, node_data])
-            ID_INCR += 1
-
-    elif size_of_mbrs % consts.MAX_CAPACITY < consts.MIN_DATA_NUM:
-        #print("Take from the previous and add to this one")
-        remain = consts.MIN_DATA_NUM - size_of_mbrs % consts.MAX_CAPACITY
-        num_of_nodes = math.ceil(size_of_mbrs/consts.MAX_CAPACITY)
-        for node in range(0, num_of_nodes):
-            
-            if node == num_of_nodes - 2:
-                node_data = mbrs[node*consts.MAX_CAPACITY:(node+1)*consts.MAX_CAPACITY - remain]
-            elif node == num_of_nodes -1:
-                node_data = mbrs[node*consts.MAX_CAPACITY - remain:(node+1)*consts.MAX_CAPACITY]
-            else:
-                node_data = mbrs[node*consts.MAX_CAPACITY:(node+1)*consts.MAX_CAPACITY]
-            r_tree.write(f"[{isnonleaf}, {ID_INCR}, {node_data}]\n")
-            new_mbrs.append([ID_INCR, node_data])
-            ID_INCR += 1
-
-    print(f'{len(new_mbrs)} nodes at level {TREE_LEVEL}.')
-    TREE_LEVEL += 1
-
-    create_nodes(new_mbrs)        
-    construct_r_tree(new_mbrs, r_tree, isnonleaf=1)
-
-def create_nodes(new_mbrs):
-    with open(f'testfiles/new_mbrs_level{TREE_LEVEL}.txt', 'w') as l:
-        for mbr in new_mbrs:
-            l.write(f'{mbr}\n')
-
-        with open(f'testfiles/new_mbrs_in_tree{TREE_LEVEL}.txt', 'w') as f:
-            
-            for mbrs in new_mbrs:
-                l = []
-                for mbr in mbrs[1]:
-                    l.append(mbr[1])
-                mbrs[1] = calculate_mbrs_nonleafs(l)
-
-            for re in new_mbrs:
-                f.write(f'[{re}]\n')
-
-def calculate_mbrs_nonleafs(mbrs):
-    mbr_x_low = []
-    mbr_x_high =[]
-    mbr_y_low = []
-    mbr_y_high = []
-
-    for mbr in mbrs:
-        mbr_x_low.append(mbr[0])
-        mbr_x_high.append(mbr[1])
-        mbr_y_low.append(mbr[2])
-        mbr_y_high.append(mbr[3])
-
-    return [min(mbr_x_low), max(mbr_x_high), min(mbr_y_low), max(mbr_y_high)]
-
-main()
+if __name__ == '__main__':
+    main()
