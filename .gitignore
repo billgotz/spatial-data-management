@@ -1,3 +1,6 @@
-/a.txt
-/files
+/__pycache__
+/inputfiles
+/testfiles
 /Rtree.txt
+readme.pdf
+readme.docx
